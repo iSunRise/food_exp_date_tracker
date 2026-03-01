@@ -72,6 +72,7 @@ function createHarness(cronSchedule = "0 9 * * *"): Harness {
     onCallbackQuery: vi.fn(() => undefined),
     sendMessage: vi.fn(async () => undefined),
     sendAlert: vi.fn(async () => undefined),
+    sendPhoto: vi.fn(async () => undefined),
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
   };

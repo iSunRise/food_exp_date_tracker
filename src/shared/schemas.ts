@@ -71,6 +71,15 @@ export const NewFoodItemSchema = v.object({
   confidence: v.optional(v.nullable(v.number())),
 });
 
+// === Image Upload Params ===
+
+export const ImageUploadParamsSchema = v.object({
+  chatId: v.string(),
+  itemId: v.string(),
+  buffer: v.instance(Buffer),
+  mimeType: v.string(),
+});
+
 // === LLM ===
 
 export const LlmCompletionParamsSchema = v.object({

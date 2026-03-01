@@ -25,16 +25,27 @@ export const listHandler: BotHandler = {
       }),
     );
 
-    const buttons = items.map((item) => [
-      {
-        text: ctx.i18n.t(message.chatId, "btnConsume"),
-        callbackData: `consume:${item.id}`,
-      },
-      {
-        text: ctx.i18n.t(message.chatId, "btnDelete"),
-        callbackData: `delete:${item.id}`,
-      },
-    ]);
+    const buttons = items.map((item) => {
+      const row = [
+        {
+          text: ctx.i18n.t(message.chatId, "btnConsume"),
+          callbackData: `consume:${item.id}`,
+        },
+        {
+          text: ctx.i18n.t(message.chatId, "btnDelete"),
+          callbackData: `delete:${item.id}`,
+        },
+      ];
+
+      if (item.imageUrl) {
+        row.push({
+          text: ctx.i18n.t(message.chatId, "btnPhoto"),
+          callbackData: `photo:${item.id}`,
+        });
+      }
+
+      return row;
+    });
 
     await ctx.adapter.sendMessage(message.chatId, {
       text: `${ctx.i18n.t(message.chatId, "listHeader")}\n${lines.join("\n")}`,

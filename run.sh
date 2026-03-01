@@ -49,8 +49,19 @@ trap forward_signal SIGINT SIGTERM
 export TELEGRAM_BOT_TOKEN="$(bashio::config 'telegram_bot_token')"
 export OPENROUTER_API_KEY="$(bashio::config 'openrouter_api_key')"
 export OPENROUTER_MODEL="$(bashio::config 'openrouter_model')"
+export S3_BUCKET="$(bashio::config 's3_bucket')"
+export S3_REGION="$(bashio::config 's3_region')"
+export S3_ACCESS_KEY_ID="$(bashio::config 's3_access_key_id')"
+export S3_SECRET_ACCESS_KEY="$(bashio::config 's3_secret_access_key')"
+export S3_FORCE_PATH_STYLE="$(bashio::config 's3_force_path_style')"
 export ALERT_CRON_SCHEDULE="$(bashio::config 'alert_cron_schedule')"
 export LOG_LEVEL="$(bashio::config 'log_level')"
+
+if bashio::config.has_value 's3_endpoint'; then
+  export S3_ENDPOINT="$(bashio::config 's3_endpoint')"
+else
+  unset S3_ENDPOINT || true
+fi
 
 database_url_option=""
 if bashio::config.has_value 'database_url'; then

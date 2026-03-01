@@ -1,6 +1,7 @@
 import type {
   BotAdapter,
   FoodRepository,
+  ImageStorageService,
   I18nService,
   VisionService,
 } from "../shared/interfaces.js";
@@ -15,6 +16,7 @@ export interface HandlerContext {
   readonly vision: VisionService;
   readonly repository: FoodRepository;
   readonly i18n: I18nService;
+  readonly imageStorage: ImageStorageService;
 
   /** Translate + send in one call. */
   sendLocalized(

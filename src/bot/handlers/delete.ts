@@ -22,6 +22,14 @@ export const deleteHandler: BotHandler = {
     const item = await ctx.repository.getItemById(itemId);
     await ctx.repository.deleteItem(itemId);
 
+    if (item?.imageUrl) {
+      try {
+        await ctx.imageStorage.delete(item.imageUrl);
+      } catch (error) {
+        console.error(`Failed to delete image for item ${itemId}`, error);
+      }
+    }
+
     await ctx.sendLocalized(message.chatId, "itemDeleted", {
       params: {
         productName: item?.productName ?? itemId,

@@ -5,6 +5,7 @@ import { createDefaultHandlers } from "../../src/bot/handlers/index.js";
 import type {
   BotAdapter,
   FoodRepository,
+  ImageStorageService,
   I18nService,
   MessageHandler,
   CallbackQueryHandler,
@@ -24,6 +25,7 @@ interface Harness {
   repository: Mocked<FoodRepository>;
   vision: Mocked<VisionService>;
   i18n: Mocked<I18nService>;
+  imageStorage: Mocked<ImageStorageService>;
   triggerMessage: (message: Partial<IncomingMessage>) => Promise<void>;
   triggerCallback: (message: Partial<IncomingMessage>) => Promise<void>;
 }
@@ -41,6 +43,7 @@ function createHarness(): Harness {
     }),
     sendMessage: vi.fn(async () => undefined),
     sendAlert: vi.fn(async () => undefined),
+    sendPhoto: vi.fn(async () => undefined),
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
   };
@@ -51,7 +54,7 @@ function createHarness(): Harness {
       chatId: item.chatId,
       productName: item.productName,
       expiryDate: item.expiryDate,
-      imageUrl: null,
+      imageUrl: item.imageUrl ?? null,
       status: "active",
       confidence: item.confidence ?? null,
       createdAt: new Date(),
@@ -88,11 +91,18 @@ function createHarness(): Harness {
     getLocale: vi.fn(async () => "en"),
   };
 
+  const imageStorage: Mocked<ImageStorageService> = {
+    upload: vi.fn(async ({ chatId, itemId }) => `${chatId}/${itemId}.jpg`),
+    getUrl: vi.fn(async (key) => `https://storage.example/${key}`),
+    delete: vi.fn(async () => undefined),
+  };
+
   const engine = new BotEngine({
     adapter,
     vision,
     repository,
     i18n,
+    imageStorage,
     handlers: createDefaultHandlers(),
   });
 
@@ -104,6 +114,7 @@ function createHarness(): Harness {
     repository,
     vision,
     i18n,
+    imageStorage,
     triggerMessage: async (message) => {
       if (!messageHandler) {
         throw new Error("message handler was not registered");
@@ -260,12 +271,21 @@ describe("BotEngine", () => {
     });
 
     expect(harness.vision.extractExpiryDate).toHaveBeenCalledTimes(1);
-    expect(harness.repository.addItem).toHaveBeenCalledWith({
+    expect(harness.imageStorage.upload).toHaveBeenCalledWith({
       chatId: "chat-1",
-      productName: "Milk",
-      expiryDate: "2026-03-10",
-      confidence: 0.95,
+      itemId: expect.any(String),
+      buffer: Buffer.from("fake"),
+      mimeType: "image/jpeg",
     });
+    expect(harness.repository.addItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: "chat-1",
+        productName: "Milk",
+        expiryDate: "2026-03-10",
+        imageUrl: expect.stringMatching(/^chat-1\/.+\.jpg$/),
+        confidence: 0.95,
+      }),
+    );
 
     expect(harness.adapter.sendMessage).toHaveBeenCalledTimes(2);
     const analyzing = harness.adapter.sendMessage.mock.calls[0];
@@ -298,15 +318,53 @@ describe("BotEngine", () => {
 
     await harness.triggerMessage({ type: "text", text: "yes" });
 
-    expect(harness.repository.addItem).toHaveBeenCalledWith({
+    expect(harness.imageStorage.upload).toHaveBeenCalledWith({
       chatId: "chat-1",
-      productName: "Yogurt",
-      expiryDate: "2026-04-01",
-      confidence: 0.5,
+      itemId: expect.any(String),
+      buffer: Buffer.from("fake"),
+      mimeType: "image/jpeg",
     });
+    expect(harness.repository.addItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: "chat-1",
+        productName: "Yogurt",
+        expiryDate: "2026-04-01",
+        imageUrl: expect.stringMatching(/^chat-1\/.+\.jpg$/),
+        confidence: 0.5,
+      }),
+    );
     const finalCall = harness.adapter.sendMessage.mock.calls.at(-1);
     expect(finalCall).toBeDefined();
     expect(parseTextPayload(finalCall![1].text).key).toBe("itemAdded");
+  });
+
+  it("stores item without image when upload fails", async () => {
+    const harness = createHarness();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      harness.imageStorage.upload.mockRejectedValueOnce(new Error("s3 down"));
+
+      await harness.triggerMessage({
+        type: "photo",
+        imageBuffer: Buffer.from("fake"),
+        imageMimeType: "image/jpeg",
+      });
+
+      expect(harness.repository.addItem).toHaveBeenCalledWith({
+        chatId: "chat-1",
+        productName: "Milk",
+        expiryDate: "2026-03-10",
+        imageUrl: null,
+        confidence: 0.95,
+      });
+      expect(harness.adapter.sendMessage).toHaveBeenCalledTimes(3);
+      expect(parseTextPayload(harness.adapter.sendMessage.mock.calls[2][1].text).key).toBe(
+        "photoUploadFailed",
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("expires pending confirmation after five minutes", async () => {
@@ -368,7 +426,12 @@ describe("BotEngine", () => {
     const harness = createHarness();
 
     harness.repository.getActiveItems.mockResolvedValueOnce([
-      buildFoodItem({ id: "item-a", productName: "Milk", expiryDate: "2026-03-10" }),
+      buildFoodItem({
+        id: "item-a",
+        productName: "Milk",
+        expiryDate: "2026-03-10",
+        imageUrl: "chat-1/item-a.jpg",
+      }),
       buildFoodItem({ id: "item-b", productName: "Butter", expiryDate: "2026-03-12" }),
     ]);
 
@@ -382,6 +445,7 @@ describe("BotEngine", () => {
       [
         { text: JSON.stringify({ chatId: "chat-1", key: "btnConsume", params: null }), callbackData: "consume:item-a" },
         { text: JSON.stringify({ chatId: "chat-1", key: "btnDelete", params: null }), callbackData: "delete:item-a" },
+        { text: JSON.stringify({ chatId: "chat-1", key: "btnPhoto", params: null }), callbackData: "photo:item-a" },
       ],
       [
         { text: JSON.stringify({ chatId: "chat-1", key: "btnConsume", params: null }), callbackData: "consume:item-b" },
@@ -393,18 +457,86 @@ describe("BotEngine", () => {
   it("handles consume and delete callbacks", async () => {
     const harness = createHarness();
 
-    harness.repository.getItemById.mockResolvedValue(buildFoodItem({ id: "item-123", productName: "Kefir" }));
+    harness.repository.getItemById.mockResolvedValue(
+      buildFoodItem({
+        id: "item-123",
+        productName: "Kefir",
+        imageUrl: "chat-1/item-123.jpg",
+      }),
+    );
 
     await harness.triggerCallback({ callbackData: "consume:item-123" });
     await harness.triggerCallback({ callbackData: "delete:item-123" });
 
     expect(harness.repository.markConsumed).toHaveBeenCalledWith("item-123");
     expect(harness.repository.deleteItem).toHaveBeenCalledWith("item-123");
+    expect(harness.imageStorage.delete).toHaveBeenCalledWith("chat-1/item-123.jpg");
 
     const consumeCall = harness.adapter.sendMessage.mock.calls[0];
     const deleteCall = harness.adapter.sendMessage.mock.calls[1];
     expect(parseTextPayload(consumeCall[1].text).key).toBe("itemConsumed");
     expect(parseTextPayload(deleteCall[1].text).key).toBe("itemDeleted");
+  });
+
+  it("handles photo callback by sending a presigned image url", async () => {
+    const harness = createHarness();
+
+    harness.repository.getItemById.mockResolvedValueOnce(
+      buildFoodItem({
+        id: "item-photo",
+        productName: "Juice",
+        expiryDate: "2026-03-22",
+        imageUrl: "chat-1/item-photo.jpg",
+      }),
+    );
+    harness.imageStorage.getUrl.mockResolvedValueOnce(
+      "https://storage.example/chat-1/item-photo.jpg?signature=1",
+    );
+
+    await harness.triggerCallback({ callbackData: "photo:item-photo" });
+
+    expect(harness.imageStorage.getUrl).toHaveBeenCalledWith("chat-1/item-photo.jpg");
+    expect(harness.adapter.sendPhoto).toHaveBeenCalledWith(
+      "chat-1",
+      "https://storage.example/chat-1/item-photo.jpg?signature=1",
+      JSON.stringify({
+        chatId: "chat-1",
+        key: "photoCaption",
+        params: {
+          productName: "Juice",
+          expiryDate: "2026-03-22",
+        },
+      }),
+    );
+  });
+
+  it("returns noPhotoAvailable when photo callback item has no image", async () => {
+    const harness = createHarness();
+
+    harness.repository.getItemById.mockResolvedValueOnce(
+      buildFoodItem({ id: "item-photo", imageUrl: null }),
+    );
+
+    await harness.triggerCallback({ callbackData: "photo:item-photo" });
+
+    expect(harness.adapter.sendPhoto).not.toHaveBeenCalled();
+    const call = harness.adapter.sendMessage.mock.calls[0];
+    expect(parseTextPayload(call[1].text).key).toBe("noPhotoAvailable");
+  });
+
+  it("returns noPhotoAvailable when presigned url generation fails", async () => {
+    const harness = createHarness();
+
+    harness.repository.getItemById.mockResolvedValueOnce(
+      buildFoodItem({ id: "item-photo", imageUrl: "chat-1/item-photo.jpg" }),
+    );
+    harness.imageStorage.getUrl.mockRejectedValueOnce(new Error("signing error"));
+
+    await harness.triggerCallback({ callbackData: "photo:item-photo" });
+
+    expect(harness.adapter.sendPhoto).not.toHaveBeenCalled();
+    const call = harness.adapter.sendMessage.mock.calls[0];
+    expect(parseTextPayload(call[1].text).key).toBe("noPhotoAvailable");
   });
 
   it("routes unknown callback actions to unknownCommand", async () => {

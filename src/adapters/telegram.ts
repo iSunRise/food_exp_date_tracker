@@ -24,6 +24,11 @@ interface TelegramApiLike {
     text: string,
     options?: Record<string, unknown>,
   ): Promise<unknown>;
+  sendPhoto(
+    chatId: string,
+    photo: string,
+    options?: Record<string, unknown>,
+  ): Promise<unknown>;
 }
 
 interface TelegramContextLike {
@@ -215,6 +220,11 @@ export class TelegramAdapter implements BotAdapter {
         ],
       ],
     });
+  }
+
+  async sendPhoto(chatId: string, photoUrl: string, caption?: string): Promise<void> {
+    const options = caption ? { caption } : undefined;
+    await this.bot.api.sendPhoto(chatId, photoUrl, options);
   }
 
   async start(): Promise<void> {

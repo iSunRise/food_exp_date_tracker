@@ -6,6 +6,7 @@ import { fallbackHandler } from "./fallback.js";
 import { helpHandler } from "./help.js";
 import { langCommandHandler, langSelectionHandler } from "./lang.js";
 import { listHandler } from "./list.js";
+import { photoViewHandler } from "./photo-view.js";
 import { createPhotoHandler } from "./photo.js";
 import { startHandler } from "./start.js";
 
@@ -21,6 +22,7 @@ export function createDefaultHandlers(): BotHandler[] {
     consumeHandler,
     deleteHandler,
     langSelectionHandler,
+    photoViewHandler,
     // Text interceptor for pending confirmations (before command matching)
     createConfirmationHandler(confirmationStore),
     // Photo messages

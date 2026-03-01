@@ -21,6 +21,11 @@ export const en = {
   extractionFailed:
     "I could not read the expiration date. Please retake the photo with better lighting.",
   noDateFound: "I could not find an expiration date in this photo.",
+  noPhotoAvailable: "No photo available for this item.",
+  photoCaption: ({ productName, expiryDate }) =>
+    `${productName} - expires ${expiryDate}`,
+  photoUploadFailed:
+    "Photo saved but image upload failed. The item was still tracked.",
   confirmExtraction: ({ productName, expiryDate, rawText }) =>
     [
       "Please confirm the extracted details:",
@@ -48,6 +53,7 @@ export const en = {
   // Buttons
   btnConsume: "Consumed",
   btnDelete: "Delete",
+  btnPhoto: "Photo",
   btnYes: "Yes",
   btnNo: "No",
 

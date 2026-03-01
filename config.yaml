@@ -1,5 +1,5 @@
 name: "Food Expiration Date Tracker"
-version: "0.1.0-ha3"
+version: "0.1.0-ha4"
 slug: "food_exp_date_tracker"
 description: "Run the Food Expiration Date Tracker Telegram bot on Home Assistant OS."
 startup: application
@@ -18,6 +18,12 @@ options:
   postgres_port: 5432
   openrouter_api_key: null
   openrouter_model: "google/gemini-2.0-flash-001"
+  s3_bucket: "food-photos"
+  s3_region: "us-east-1"
+  s3_endpoint: null
+  s3_access_key_id: null
+  s3_secret_access_key: null
+  s3_force_path_style: false
   alert_cron_schedule: "0 9 * * *"
   log_level: "info"
   run_migrations: true
@@ -31,6 +37,12 @@ schema:
   postgres_port: port
   openrouter_api_key: password
   openrouter_model: str
+  s3_bucket: str
+  s3_region: str?
+  s3_endpoint: str?
+  s3_access_key_id: password
+  s3_secret_access_key: password
+  s3_force_path_style: bool
   alert_cron_schedule: str
   log_level: "list(debug|info|warn|error)"
   run_migrations: bool

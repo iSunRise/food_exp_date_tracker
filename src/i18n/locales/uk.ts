@@ -21,6 +21,11 @@ export const uk = {
   extractionFailed:
     "Не вдалося зчитати дату придатності. Спробуйте зробити фото ще раз при кращому освітленні.",
   noDateFound: "Не вдалося знайти дату придатності на цьому фото.",
+  noPhotoAvailable: "Фото для цього продукту недоступне.",
+  photoCaption: ({ productName, expiryDate }) =>
+    `${productName} - термін до ${expiryDate}`,
+  photoUploadFailed:
+    "Фото збережено, але завантаження зображення не вдалося. Продукт все одно відстежується.",
   confirmExtraction: ({ productName, expiryDate, rawText }) =>
     [
       "Підтвердьте знайдені дані:",
@@ -49,6 +54,7 @@ export const uk = {
   // Buttons
   btnConsume: "Спожито",
   btnDelete: "Видалити",
+  btnPhoto: "Фото",
   btnYes: "Так",
   btnNo: "Ні",
 

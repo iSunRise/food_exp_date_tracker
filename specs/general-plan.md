@@ -15,7 +15,8 @@ A Telegram bot that helps users track food expiration dates. Users send photos o
 | Scheduler         | node-cron                       | In-process, sufficient for periodic checks                   |
 | Validation        | valibot                         | Tree-shakeable, function-based schemas as module contracts   |
 | Testing           | vitest                          | Fast, native TS, ESM-friendly                                |
-| Containerization  | Docker Compose                  | PostgreSQL + bot service                                     |
+| Image Storage     | AWS SDK v3 (S3)                 | S3-compatible; MinIO for local dev                           |
+| Containerization  | Docker Compose                  | PostgreSQL + MinIO + bot service                             |
 
 ## Architecture Diagram
 
@@ -42,6 +43,15 @@ A Telegram bot that helps users track food expiration dates. Users send photos o
        │ (OpenRouter) │ │             │   │  (en / uk)  │
        └─────────────┘ └─────────────┘   └────────────┘
 
+       ┌──────────────┐
+       │ Image Storage │◄── Used by Bot Engine (photo upload,
+       │  (S3-compat)  │   retrieval, deletion)
+       └──────┬────────┘
+              │
+       ┌──────▼──────┐
+       │   S3 / MinIO │
+       └─────────────┘
+
 i18n is used by Bot Engine and Scheduler for all user-facing text.
 ```
 
@@ -52,7 +62,8 @@ Each module communicates through explicitly defined interfaces and valibot schem
 ### Dependency Rules
 
 - **Telegram Adapter** → implements `BotAdapter` interface; depends on grammY only
-- **Bot Engine** → thin router dispatching to pluggable `BotHandler` implementations; depends on `BotAdapter`, `FoodRepository`, `VisionService`, `I18nService` interfaces only
+- **Bot Engine** → thin router dispatching to pluggable `BotHandler` implementations; depends on `BotAdapter`, `FoodRepository`, `VisionService`, `I18nService`, `ImageStorageService` interfaces only
+- **Image Storage** → depends on `@aws-sdk/client-s3` only; no knowledge of bot logic or Telegram
 - **OCR/Vision** → depends on `LlmClient` interface only
 - **LLM Client** → depends on OpenAI SDK only; no knowledge of OCR or bot logic
 - **Storage** → depends on Drizzle ORM only; exposes `FoodRepository` interface
@@ -102,9 +113,12 @@ food_exp_date_tracker/
 │   │       ├── confirmation.ts     # ConfirmationStore + yes/no text interceptor
 │   │       ├── consume.ts          # consume:{id} callback handler
 │   │       ├── delete.ts           # delete:{id} callback handler
+│   │       ├── photo-view.ts       # photo:{id} callback — sends stored photo to user
 │   │       └── fallback.ts         # Catch-all for unrecognized messages
 │   ├── adapters/
 │   │   └── telegram.ts             # grammY-based BotAdapter implementation
+│   ├── image-storage/
+│   │   └── client.ts               # S3-compatible image upload/retrieval/deletion
 │   ├── ocr/
 │   │   └── vision.ts               # Image → structured expiry data
 │   ├── llm/
@@ -122,6 +136,8 @@ food_exp_date_tracker/
     │   └── engine.test.ts
     ├── adapters/
     │   └── telegram.test.ts
+    ├── image-storage/
+    │   └── client.test.ts
     ├── ocr/
     │   └── vision.test.ts
     ├── llm/
@@ -152,8 +168,9 @@ food_exp_date_tracker/
 6. LLM Client calls OpenRouter vision model, returns raw response
 7. VisionService parses response into `ExtractionResult` (product name, expiry date, confidence)
 8. If confidence is low or ambiguous, Engine asks user for confirmation via adapter
-9. Engine calls `FoodRepository.addItem(...)` to persist
-10. Engine replies to user with confirmation via adapter
+9. On save: photo handler uploads original image to S3 via `ImageStorageService.upload()`, stores returned object key as `imageUrl`
+10. Engine calls `FoodRepository.addItem(...)` to persist (with `imageUrl` pointing to S3 key)
+11. Engine replies to user with confirmation via adapter
 
 ### Flow 2: List Tracked Items
 
@@ -177,6 +194,15 @@ food_exp_date_tracker/
 3. Engine calls `FoodRepository.markConsumed(itemId)`
 4. Engine replies with confirmation
 
+### Flow 5: View Photo
+
+1. User taps "Photo" button on a list item (shown for items that have a stored photo)
+2. Adapter receives `photo:{itemId}` callback
+3. Engine dispatches to `photoViewHandler`
+4. Handler fetches item, calls `ImageStorageService.getUrl(imageUrl)` for a presigned URL
+5. Handler calls `BotAdapter.sendPhoto(chatId, presignedUrl, caption)`
+6. User sees the original food label photo in chat
+
 ## Implementation Order
 
 Modules can be developed **simultaneously** since interfaces are defined upfront. However, integration follows this order:
@@ -185,13 +211,15 @@ Modules can be developed **simultaneously** since interfaces are defined upfront
    - Infrastructure (Docker, config, project scaffolding)
    - Storage module (schema, migrations, repository)
    - LLM Client module
+   - Image Storage module (S3 client, MinIO in Docker)
 2. **Phase 2 (parallel, after Phase 1 interfaces exist)**:
    - OCR/Vision module (needs LLM Client)
-   - Telegram Adapter (needs shared interfaces)
+   - Telegram Adapter (needs shared interfaces, includes `sendPhoto`)
    - Scheduler (needs Storage + Adapter interfaces)
    - i18n module (needs Storage for locale persistence)
 3. **Phase 3**:
-   - Bot Engine (wires everything together)
+   - Bot Engine (wires everything together, including Image Storage)
+   - Photo view handler, updated photo/confirmation/delete/list handlers
    - Integration testing
 4. **Phase 4**:
    - main.ts entrypoint (DI wiring)
@@ -208,4 +236,6 @@ Each module has its own spec document:
 - [Bot Engine](./module-bot-engine.md)
 - [Telegram Adapter](./module-telegram-adapter.md)
 - [Scheduler](./module-scheduler.md)
+- [Image Storage](./module-image-storage.md)
+- [Photo Storage Feature (cross-module changes)](./feature-photo-storage.md)
 - [i18n](./module-i18n.md)

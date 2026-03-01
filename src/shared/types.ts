@@ -7,6 +7,7 @@ import type {
   ExtractionResultSchema,
   FoodItemSchema,
   NewFoodItemSchema,
+  ImageUploadParamsSchema,
   LlmCompletionParamsSchema,
   LlmVisionParamsSchema,
   LlmCompletionResultSchema,
@@ -19,6 +20,7 @@ export type AlertPayload = v.InferOutput<typeof AlertPayloadSchema>;
 export type ExtractionResult = v.InferOutput<typeof ExtractionResultSchema>;
 export type FoodItem = v.InferOutput<typeof FoodItemSchema>;
 export type NewFoodItem = v.InferOutput<typeof NewFoodItemSchema>;
+export type ImageUploadParams = v.InferOutput<typeof ImageUploadParamsSchema>;
 export type LlmCompletionParams = v.InferOutput<typeof LlmCompletionParamsSchema>;
 export type LlmVisionParams = v.InferOutput<typeof LlmVisionParamsSchema>;
 export type LlmCompletionResult = v.InferOutput<typeof LlmCompletionResultSchema>;

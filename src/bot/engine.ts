@@ -3,6 +3,7 @@ import * as v from "valibot";
 import type {
   BotAdapter,
   FoodRepository,
+  ImageStorageService,
   I18nService,
   VisionService,
 } from "../shared/interfaces.js";
@@ -15,6 +16,7 @@ export interface BotEngineOptions {
   vision: VisionService;
   repository: FoodRepository;
   i18n: I18nService;
+  imageStorage: ImageStorageService;
   handlers: BotHandler[];
 }
 
@@ -32,6 +34,7 @@ export class BotEngine {
       vision: options.vision,
       repository: options.repository,
       i18n: options.i18n,
+      imageStorage: options.imageStorage,
       sendLocalized: async (chatId, key, opts = {}) => {
         const text = options.i18n.t(chatId, key, opts.params);
         await options.adapter.sendMessage(chatId, {

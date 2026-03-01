@@ -10,6 +10,7 @@ interface Harness {
   adapter: TelegramAdapter;
   handlers: Partial<Record<SupportedUpdateType, UpdateHandler>>;
   sendMessage: ReturnType<typeof vi.fn>;
+  sendPhoto: ReturnType<typeof vi.fn>;
   getFile: ReturnType<typeof vi.fn>;
   getMe: ReturnType<typeof vi.fn>;
   start: ReturnType<typeof vi.fn>;
@@ -31,6 +32,7 @@ function createHarness(): Harness {
   const handlers: Partial<Record<SupportedUpdateType, UpdateHandler>> = {};
 
   const sendMessage = vi.fn(async () => ({}));
+  const sendPhoto = vi.fn(async () => ({}));
   const getFile = vi.fn(async () => ({ file_path: "photos/picture.jpg" }));
   const getMe = vi.fn(async () => ({ id: 999, username: "food_bot" }));
   const start = vi.fn(async () => undefined);
@@ -59,6 +61,7 @@ function createHarness(): Harness {
       getFile,
       getMe,
       sendMessage,
+      sendPhoto,
     },
   };
 
@@ -73,6 +76,7 @@ function createHarness(): Harness {
     adapter,
     handlers,
     sendMessage,
+    sendPhoto,
     getFile,
     getMe,
     start,
@@ -275,6 +279,23 @@ describe("TelegramAdapter", () => {
     expect(call[2]?.reply_markup?.inline_keyboard).toEqual([
       [{ text: "Mark Consumed", callback_data: "consume:item-55" }],
     ]);
+  });
+
+  it("sends photo messages with caption", async () => {
+    const harness = createHarness();
+
+    await harness.adapter.sendPhoto(
+      "777",
+      "https://storage.local/photo.jpg",
+      "Milk - expires 2026-03-10",
+    );
+
+    expect(harness.sendPhoto).toHaveBeenCalledTimes(1);
+    expect(harness.sendPhoto).toHaveBeenCalledWith(
+      "777",
+      "https://storage.local/photo.jpg",
+      { caption: "Milk - expires 2026-03-10" },
+    );
   });
 
   it("starts polling and logs bot identity", async () => {

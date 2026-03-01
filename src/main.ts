@@ -4,6 +4,7 @@ import { TelegramAdapter } from "./adapters/telegram.js";
 import { BotEngine } from "./bot/engine.js";
 import { createDefaultHandlers } from "./bot/handlers/index.js";
 import { config } from "./config.js";
+import { S3ImageStorageService } from "./image-storage/client.js";
 import { DefaultI18nService } from "./i18n/index.js";
 import { OpenRouterLlmClient } from "./llm/client.js";
 import { DefaultVisionService } from "./ocr/vision.js";
@@ -35,12 +36,27 @@ async function bootstrap(): Promise<void> {
     model: config.openrouterModel,
   });
   const vision = new DefaultVisionService(llmClient);
+  const imageStorage = new S3ImageStorageService({
+    bucket: config.s3Bucket,
+    region: config.s3Region,
+    endpoint: config.s3Endpoint,
+    accessKeyId: config.s3AccessKeyId,
+    secretAccessKey: config.s3SecretAccessKey,
+    forcePathStyle: config.s3ForcePathStyle,
+  });
 
   // Telegram adapter
   adapter = new TelegramAdapter({ token: config.telegramBotToken });
 
   // Bot engine
-  const engine = new BotEngine({ adapter, vision, repository, i18n, handlers: createDefaultHandlers() });
+  const engine = new BotEngine({
+    adapter,
+    vision,
+    repository,
+    i18n,
+    imageStorage,
+    handlers: createDefaultHandlers(),
+  });
   engine.start();
   console.log("Bot engine started.");
 

@@ -15,6 +15,9 @@ export interface TranslationMap {
   analyzingPhoto: string;
   extractionFailed: string;
   noDateFound: string;
+  noPhotoAvailable: string;
+  photoCaption: (params: { productName: string; expiryDate: string }) => string;
+  photoUploadFailed: string;
   confirmExtraction: (params: {
     productName: string;
     expiryDate: string;
@@ -45,6 +48,7 @@ export interface TranslationMap {
   // Buttons
   btnConsume: string;
   btnDelete: string;
+  btnPhoto: string;
   btnYes: string;
   btnNo: string;
 

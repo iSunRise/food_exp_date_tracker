@@ -8,6 +8,7 @@ import type {
   LlmVisionParams,
   FoodItem,
   NewFoodItem,
+  ImageUploadParams,
 } from "./types.js";
 
 // === Message Handlers ===
@@ -22,6 +23,7 @@ export interface BotAdapter {
   onCallbackQuery(handler: CallbackQueryHandler): void;
   sendMessage(chatId: string, message: OutgoingMessage): Promise<void>;
   sendAlert(chatId: string, alert: AlertPayload): Promise<void>;
+  sendPhoto(chatId: string, photoUrl: string, caption?: string): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
 }
@@ -65,4 +67,12 @@ export interface I18nService {
   t(chatId: string, key: string, params?: Record<string, unknown>): string;
   setLocale(chatId: string, locale: Locale): Promise<void>;
   getLocale(chatId: string): Promise<Locale>;
+}
+
+// === Image Storage Service ===
+
+export interface ImageStorageService {
+  upload(params: ImageUploadParams): Promise<string>;
+  getUrl(key: string): Promise<string>;
+  delete(key: string): Promise<void>;
 }
