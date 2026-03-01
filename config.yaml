@@ -1,0 +1,27 @@
+name: "Food Expiration Date Tracker"
+version: "0.1.0-ha1"
+slug: "food_exp_date_tracker"
+description: "Run the Food Expiration Date Tracker Telegram bot on Home Assistant OS."
+startup: application
+boot: auto
+init: false
+arch:
+  - amd64
+  - aarch64
+  - armv7
+options:
+  telegram_bot_token: null
+  database_url: null
+  openrouter_api_key: null
+  openrouter_model: "google/gemini-2.0-flash-001"
+  alert_cron_schedule: "0 9 * * *"
+  log_level: "info"
+  run_migrations: true
+schema:
+  telegram_bot_token: password
+  database_url: password
+  openrouter_api_key: password
+  openrouter_model: str
+  alert_cron_schedule: str
+  log_level: "list(debug|info|warn|error)"
+  run_migrations: bool
