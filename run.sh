@@ -52,7 +52,10 @@ export OPENROUTER_MODEL="$(bashio::config 'openrouter_model')"
 export ALERT_CRON_SCHEDULE="$(bashio::config 'alert_cron_schedule')"
 export LOG_LEVEL="$(bashio::config 'log_level')"
 
-database_url_option="$(bashio::config 'database_url')"
+database_url_option=""
+if bashio::config.has_value 'database_url'; then
+  database_url_option="$(bashio::config 'database_url')"
+fi
 
 if bashio::config.true 'use_internal_postgres'; then
   POSTGRES_DB="$(bashio::config 'postgres_db')"

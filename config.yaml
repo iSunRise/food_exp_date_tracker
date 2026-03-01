@@ -1,5 +1,5 @@
 name: "Food Expiration Date Tracker"
-version: "0.1.0-ha2"
+version: "0.1.0-ha3"
 slug: "food_exp_date_tracker"
 description: "Run the Food Expiration Date Tracker Telegram bot on Home Assistant OS."
 startup: application
@@ -11,7 +11,6 @@ arch:
   - armv7
 options:
   telegram_bot_token: null
-  database_url: null
   use_internal_postgres: true
   postgres_db: "food_tracker"
   postgres_user: "postgres"

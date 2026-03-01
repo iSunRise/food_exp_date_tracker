@@ -4,9 +4,9 @@ Run this Telegram bot as a Home Assistant add-on on HAOS.
 
 ## Install
 
-Replace `YOUR_GITHUB_USERNAME` in the link below with your real GitHub username (or org), then open it:
+Use the button below to add this repository to Home Assistant:
 
-[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FYOUR_GITHUB_USERNAME%2Ffood_exp_date_tracker)
+[![Open Home Assistant Add-on Store](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FiSunRise%2Ffood_exp_date_tracker)
 
 After adding the repository:
 1. Open the add-on store in Home Assistant.
