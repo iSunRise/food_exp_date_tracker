@@ -52,7 +52,7 @@ Each module communicates through explicitly defined interfaces and valibot schem
 ### Dependency Rules
 
 - **Telegram Adapter** → implements `BotAdapter` interface; depends on grammY only
-- **Bot Engine** → depends on `BotAdapter`, `FoodRepository`, `VisionService`, `I18nService` interfaces only
+- **Bot Engine** → thin router dispatching to pluggable `BotHandler` implementations; depends on `BotAdapter`, `FoodRepository`, `VisionService`, `I18nService` interfaces only
 - **OCR/Vision** → depends on `LlmClient` interface only
 - **LLM Client** → depends on OpenAI SDK only; no knowledge of OCR or bot logic
 - **Storage** → depends on Drizzle ORM only; exposes `FoodRepository` interface
@@ -89,7 +89,20 @@ food_exp_date_tracker/
 │   │       ├── en.ts               # English translations
 │   │       └── uk.ts               # Ukrainian translations
 │   ├── bot/
-│   │   └── engine.ts               # Command routing, orchestration logic
+│   │   ├── engine.ts               # Thin router: validates messages, dispatches to handlers
+│   │   ├── handler.ts              # BotHandler and HandlerContext interfaces
+│   │   ├── utils.ts                # Shared constants and utility functions
+│   │   └── handlers/
+│   │       ├── index.ts            # createDefaultHandlers() factory
+│   │       ├── start.ts            # /start command handler
+│   │       ├── help.ts             # /help command handler
+│   │       ├── list.ts             # /list command handler
+│   │       ├── lang.ts             # /lang command + lang:{locale} callback
+│   │       ├── photo.ts            # Photo message processing
+│   │       ├── confirmation.ts     # ConfirmationStore + yes/no text interceptor
+│   │       ├── consume.ts          # consume:{id} callback handler
+│   │       ├── delete.ts           # delete:{id} callback handler
+│   │       └── fallback.ts         # Catch-all for unrecognized messages
 │   ├── adapters/
 │   │   └── telegram.ts             # grammY-based BotAdapter implementation
 │   ├── ocr/

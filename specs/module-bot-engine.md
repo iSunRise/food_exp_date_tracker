@@ -2,14 +2,37 @@
 
 ## Scope
 
-The central orchestrator. Receives adapter-agnostic messages, routes them to the appropriate handler, coordinates between vision service and storage, and returns responses through the adapter. Knows nothing about Telegram/grammY, OpenAI SDK, or Drizzle — only works with interfaces.
+The central orchestrator. Receives adapter-agnostic messages, validates them, and dispatches to pluggable handlers. The engine itself is a thin router — all command logic, callback processing, and photo handling live in individual handler files. Knows nothing about Telegram/grammY, OpenAI SDK, or Drizzle — only works with interfaces.
+
+## Architecture
+
+The bot engine follows a **handler chain** pattern:
+
+1. The **engine** (`src/bot/engine.ts`) validates incoming messages and iterates through an ordered list of handlers. The first handler whose `match()` returns `true` processes the message.
+2. Each **handler** (`src/bot/handlers/*.ts`) is a self-contained unit that declares what it matches and how to process it, conforming to the `BotHandler` interface defined in `src/bot/handler.ts`.
+3. A **handler context** (`HandlerContext`) provides every handler with access to all dependencies (adapter, vision, repository, i18n) and shared utilities.
+4. A **factory function** (`createDefaultHandlers()` in `src/bot/handlers/index.ts`) wires handler ordering and shared state, returning the complete handler array.
+
+Adding a new command or callback requires only creating a new handler file and registering it in the factory — no engine modifications needed.
 
 ## Files
 
-| File                         | Purpose                                  |
-| ---------------------------- | ---------------------------------------- |
-| `src/bot/engine.ts`          | Core orchestration and command handling  |
-| `tests/bot/engine.test.ts`   | Unit tests with all dependencies mocked  |
+| File | Purpose |
+| --- | --- |
+| `src/bot/engine.ts` | Thin router: validates messages, iterates handlers |
+| `src/bot/handler.ts` | `BotHandler` and `HandlerContext` interface definitions |
+| `src/bot/utils.ts` | Shared constants and utility functions |
+| `src/bot/handlers/index.ts` | `createDefaultHandlers()` factory — wires ordering and shared state |
+| `src/bot/handlers/start.ts` | `/start` command handler |
+| `src/bot/handlers/help.ts` | `/help` command handler |
+| `src/bot/handlers/list.ts` | `/list` command handler |
+| `src/bot/handlers/lang.ts` | `/lang` command handler + `lang:{locale}` callback handler |
+| `src/bot/handlers/photo.ts` | Photo message processing with vision service |
+| `src/bot/handlers/confirmation.ts` | `ConfirmationStore` class + pending confirmation text interceptor |
+| `src/bot/handlers/consume.ts` | `consume:{id}` callback handler |
+| `src/bot/handlers/delete.ts` | `delete:{id}` callback handler |
+| `src/bot/handlers/fallback.ts` | Catch-all handler for unrecognized messages |
+| `tests/bot/engine.test.ts` | Integration tests with all dependencies mocked |
 
 ## Dependencies (all injected)
 
@@ -19,156 +42,199 @@ The central orchestrator. Receives adapter-agnostic messages, routes them to the
 - `I18nService` interface
 - `valibot` — for validating incoming message payloads
 
+## Interfaces
+
+### `BotHandler` (defined in `src/bot/handler.ts`)
+
+Every handler implements this interface:
+
+- `name: string` — human-readable identifier for logging/debugging
+- `match(message: IncomingMessage): boolean` — returns `true` if this handler should process the message
+- `handle(message: IncomingMessage, ctx: HandlerContext): Promise<void>` — processes the matched message
+
+### `HandlerContext` (defined in `src/bot/handler.ts`)
+
+Passed to every handler's `handle()` method. Provides:
+
+- `adapter: BotAdapter` — for sending messages
+- `vision: VisionService` — for image extraction
+- `repository: FoodRepository` — for data persistence
+- `i18n: I18nService` — for translations
+- `sendLocalized(chatId, key, options?)` — convenience method that translates via `i18n.t()` and sends via `adapter.sendMessage()` in one call. Accepts optional `params` and `inlineKeyboard`.
+
+The engine creates a single `HandlerContext` instance in its constructor and passes it to all handlers.
+
 ## src/bot/engine.ts
 
-### Constructor
+### Constructor (`BotEngineOptions`)
 
-Receives all dependencies via a single options object:
+Receives all dependencies plus the handler array via a single options object:
+
 - `adapter: BotAdapter`
 - `vision: VisionService`
 - `repository: FoodRepository`
 - `i18n: I18nService`
+- `handlers: BotHandler[]`
+
+Builds the `HandlerContext` from the provided dependencies.
 
 ### Method: `start(): void`
 
-Registers handlers on the adapter:
+Registers listeners on the adapter:
 - `adapter.onMessage(handler)` — for text and photo messages
 - `adapter.onCallbackQuery(handler)` — for inline button taps
 
-### Message Routing
+Both listeners delegate to the same `route()` method.
 
-When a message is received, the engine inspects its type and routes:
+### Method: `route(raw: IncomingMessage)` (private)
 
-| Message Type      | Handler                     |
-| ----------------- | --------------------------- |
-| Photo (has image) | `handlePhotoMessage`        |
-| `/start`          | `handleStartCommand`        |
-| `/list`           | `handleListCommand`         |
-| `/help`           | `handleHelpCommand`         |
-| `/lang`           | `handleLangCommand`         |
-| Callback: `consume:{id}` | `handleConsumeAction` |
-| Callback: `delete:{id}`  | `handleDeleteAction`  |
-| Callback: `lang:{locale}` | `handleLangSelection` |
-| Unknown text      | `handleUnknownMessage`      |
+1. Validates the incoming message against `IncomingMessageSchema` via valibot. Silently drops invalid messages.
+2. Iterates through `this.handlers` in order. The first handler whose `match()` returns `true` has its `handle()` called.
+3. If no handler matches, sends `unknownCommand` via `sendLocalized`.
+4. Wraps the entire dispatch in a try/catch — errors fall back to `unknownCommand`.
 
-### Handler: `handleStartCommand(msg: IncomingMessage)`
+## src/bot/utils.ts
 
-- Checks if user has a locale set (via `i18n.getLocale(chatId)`)
-- If first interaction (no locale persisted): replies with welcome message in English and prompts language selection with inline buttons: "English 🇬🇧" / "Українська 🇺🇦" (callback data: `lang:en`, `lang:uk`)
-- If locale already set: replies with welcome message in user's language, lists available commands
+Shared constants and pure utility functions used across handlers:
 
-### Handler: `handleHelpCommand(msg: IncomingMessage)`
+### Constants
 
-- Replies with usage instructions
+| Constant | Value | Purpose |
+| --- | --- | --- |
+| `LOW_CONFIDENCE_THRESHOLD` | `0.7` | Below this, photo extraction requires user confirmation |
+| `CONFIRMATION_TTL_MS` | `300000` (5 min) | Timeout for pending confirmations |
+| `DEFAULT_LOCALE` | `"en"` | Fallback locale |
+| `SUPPORTED_LOCALES` | `["en", "uk"]` | Valid locale values |
+| `YES_TOKENS` | `Set{"yes", "y", "tak", "так", "да"}` | Accepted affirmative responses |
+| `NO_TOKENS` | `Set{"no", "n", "ni", "ні", "нет"}` | Accepted negative responses |
 
-### Handler: `handlePhotoMessage(msg: IncomingMessage)`
+### Functions
 
-1. Extract image buffer and mimeType from the message
-2. Reply with "Analyzing your food label..." (immediate feedback)
-3. Call `vision.extractExpiryDate(image, mimeType)`
-4. If extraction failed → reply with error, suggest retaking photo
-5. If extraction succeeded but low confidence (< 0.7) → ask user to confirm the extracted date (include raw text and parsed date)
-6. If extraction succeeded with high confidence → save immediately via `repository.addItem(...)` and reply with confirmation showing product name and expiry date
+- `extractId(value, prefix)` — strips a prefix from callback data and returns the ID portion, or `null`
+- `computeDaysUntil(expiryDate)` — calculates days from today to the given ISO date string
+- `buildLanguageKeyboard()` — returns the standard language selection `InlineButton[][]`
+- `isSupportedLocale(locale)` — type guard that checks if a string is a valid `Locale`
 
-### Handler: `handleListCommand(msg: IncomingMessage)`
+## Handler Registration Order
 
-1. Call `repository.getActiveItems(chatId)`
-2. If no items → reply "No tracked items"
-3. Format each item as a line: `{productName} — expires {date} ({daysUntil} days)`
-4. Attach inline keyboard with "Consumed" and "Delete" buttons per item
+Defined in `createDefaultHandlers()` in `src/bot/handlers/index.ts`. Order matters — first match wins.
 
-### Handler: `handleConsumeAction(msg: IncomingMessage)`
+| Priority | Handler(s) | Match Criteria |
+| --- | --- | --- |
+| 1 | `consumeHandler`, `deleteHandler`, `langSelectionHandler` | `type === "callback"` + callbackData prefix |
+| 2 | confirmation handler | `type === "text"` + pending confirmation exists for chatId |
+| 3 | photo handler | `type === "photo"` |
+| 4 | `startHandler`, `helpHandler`, `listHandler`, `langCommandHandler` | `type === "text"` + exact command match |
+| 5 | `fallbackHandler` | Always returns `true` (catch-all, must be last) |
 
-1. Extract `itemId` from callback data
-2. Call `repository.markConsumed(itemId)`
-3. Reply with confirmation
-4. Update the original message (remove buttons or strike through)
+**Ordering rationale:**
+- Callback handlers first — they match on `type === "callback"` and are mutually exclusive with text/photo handlers.
+- Confirmation handler before commands — when a pending confirmation exists, text input like "yes" must be intercepted before command matching.
+- Photo before text commands — `type === "photo"` is disjoint from text commands.
+- Fallback last — catches anything unhandled.
 
-### Handler: `handleDeleteAction(msg: IncomingMessage)`
+## Handlers
 
-1. Extract `itemId` from callback data
-2. Call `repository.deleteItem(itemId)`
-3. Reply with confirmation
+### `/start` — `src/bot/handlers/start.ts`
 
-### Handler: `handleLangCommand(msg: IncomingMessage)`
+- Checks if user has a persisted locale via `repository.getLocale(chatId)` + `isSupportedLocale()`
+- First interaction (no locale): replies with welcome + language selection prompt with inline keyboard
+- Returning user (locale set): replies with welcome + help text
 
-- Replies with language selection inline buttons: "English 🇬🇧" / "Українська 🇺🇦"
-- Uses the user's current locale for the prompt text
+### `/help` — `src/bot/handlers/help.ts`
 
-### Handler: `handleLangSelection(msg: IncomingMessage)`
+- Replies with the `help` i18n key via `sendLocalized`
 
-1. Extract locale from callback data (`lang:en` → `'en'`, `lang:uk` → `'uk'`)
-2. Call `i18n.setLocale(chatId, locale)`
-3. Reply with confirmation in the newly selected language
+### `/list` — `src/bot/handlers/list.ts`
 
-### Handler: `handleUnknownMessage(msg: IncomingMessage)`
+1. Calls `repository.getActiveItems(chatId)`
+2. If no items: replies with `noActiveItems`
+3. Formats each item using `i18n.t(chatId, "listItem", ...)` with `computeDaysUntil()`
+4. Builds inline keyboard with "Consume" and "Delete" buttons per item (callback data: `consume:{id}`, `delete:{id}`)
+5. Sends header + formatted lines + inline keyboard via `adapter.sendMessage()`
 
-- Reply with a hint in user's locale (via `i18n.t()`): "Send me a photo of a food label, or use /help"
+### `/lang` + `lang:{locale}` — `src/bot/handlers/lang.ts`
 
-## Message Types (from shared/)
+Exports two handlers:
 
-```typescript
-interface IncomingMessage {
-  id: string
-  chatId: string
-  type: 'text' | 'photo' | 'callback'
-  text: string | null
-  imageBuffer: Buffer | null
-  imageMimeType: string | null
-  callbackData: string | null
-}
+- **`langCommandHandler`**: replies with `selectLanguage` text + language selection inline keyboard
+- **`langSelectionHandler`**: extracts locale from `lang:{locale}` callback, validates it, calls `i18n.setLocale()`, replies with `languageChanged`
 
-type MessageHandler = (msg: IncomingMessage) => Promise<void>
-type CallbackQueryHandler = (msg: IncomingMessage) => Promise<void>
+### Photo — `src/bot/handlers/photo.ts`
 
-interface OutgoingMessage {
-  text: string
-  parseMode?: 'HTML' | 'Markdown'
-  inlineKeyboard?: InlineButton[][]
-  replyToMessageId?: string
-}
+Factory function `createPhotoHandler(confirmationStore)` — receives the shared `ConfirmationStore` instance.
 
-interface InlineButton {
-  text: string
-  callbackData: string
-}
+1. Validates `imageBuffer` and `imageMimeType` are present
+2. Sends `analyzingPhoto` immediate feedback
+3. Calls `vision.extractExpiryDate(imageBuffer, imageMimeType)`
+4. If extraction failed: replies with `extractionFailed`
+5. If no date found: replies with `noDateFound`
+6. Determines `productName` from extraction (falls back to rawDateText, then expiryDate)
+7. If confidence < `LOW_CONFIDENCE_THRESHOLD`: stores pending confirmation in `ConfirmationStore`, replies with `confirmExtraction`
+8. If confidence >= threshold: saves via `repository.addItem()`, replies with `itemAdded`
 
-interface AlertPayload {
-  foodItemId: string
-  productName: string
-  expiryDate: string
-  daysUntilExpiry: number
-}
-```
+### Confirmation — `src/bot/handlers/confirmation.ts`
+
+Exports `ConfirmationStore` class and `createConfirmationHandler(store)` factory.
+
+**`ConfirmationStore`** manages in-memory pending confirmations (`Map<string, PendingConfirmation>`):
+- `has(chatId)` / `get(chatId)` / `clear(chatId)`
+- `set(chatId, payload)` — clears any existing confirmation for that chatId, sets a new one with an auto-expiry timeout (`CONFIRMATION_TTL_MS`)
+
+**Confirmation handler** (`match`: text message + `store.has(chatId)`):
+1. Normalizes text input to lowercase
+2. If yes token: clears confirmation, saves item via `repository.addItem()`, replies with `itemAdded`
+3. If no token: clears confirmation, replies with `extractionFailed`
+4. Otherwise: re-prompts with `confirmExtraction` (same data)
+
+The `ConfirmationStore` is instantiated once in `createDefaultHandlers()` and shared between the photo handler and confirmation handler via closure.
+
+### `consume:{id}` — `src/bot/handlers/consume.ts`
+
+1. Extracts `itemId` from callback data via `extractId()`
+2. Fetches item via `repository.getItemById()`
+3. Calls `repository.markConsumed(itemId)`
+4. Replies with `itemConsumed` including product name
+
+### `delete:{id}` — `src/bot/handlers/delete.ts`
+
+1. Extracts `itemId` from callback data via `extractId()`
+2. Fetches item via `repository.getItemById()`
+3. Calls `repository.deleteItem(itemId)`
+4. Replies with `itemDeleted` including product name
+
+### Fallback — `src/bot/handlers/fallback.ts`
+
+- `match()` always returns `true`
+- Replies with `unknownCommand` via `sendLocalized`
+- Must be registered last in the handler array
 
 ## i18n Usage
 
-All user-facing strings go through `i18n.t(chatId, key, params)`. The engine never contains hardcoded user-facing text. This applies to all handlers — welcome messages, error messages, confirmations, button labels, list formatting, etc.
+All user-facing strings go through `i18n.t(chatId, key, params)`. No handler contains hardcoded user-facing text. Most handlers use the `ctx.sendLocalized()` convenience method. Handlers that compose multiple translated strings (e.g., start, list) call `ctx.i18n.t()` directly and then `ctx.adapter.sendMessage()`.
 
 ## Conversation State
 
-For the confirmation flow (low confidence extraction), the engine needs minimal state:
+For the low-confidence confirmation flow, the `ConfirmationStore` class manages in-memory state:
 
 - A `Map<string, PendingConfirmation>` keyed by `chatId`
-- When awaiting confirmation, the next text message from that chat is checked for "yes"/"no"
-- Pending confirmations expire after 5 minutes (cleared by a simple timeout)
+- When awaiting confirmation, the confirmation handler intercepts the next text message from that chat (checked via `store.has(chatId)`)
+- Pending confirmations expire after 5 minutes via `setTimeout`
 - This is in-memory only — acceptable for a single-instance bot
+- The store is shared between the photo handler (writes) and confirmation handler (reads/clears) via dependency injection in `createDefaultHandlers()`
+
+## Extending the Bot
+
+To add a new command (e.g., `/stats`):
+
+1. Create `src/bot/handlers/stats.ts` implementing the `BotHandler` interface
+2. Import it in `src/bot/handlers/index.ts` and add it to the array before `fallbackHandler`
+
+No changes needed to the engine, other handlers, or tests of other handlers.
 
 ## Testing Strategy
 
-- All dependencies (adapter, vision, repository) are mocked
-- Test each handler in isolation
-- Test routing logic (photo → handlePhotoMessage, /list → handleListCommand, etc.)
-- Test low-confidence confirmation flow
-- Test error paths (vision fails, repository fails)
-- Test callback query parsing
-
-## Tasks
-
-1. Implement message routing logic
-2. Implement `handleStartCommand` and `handleHelpCommand`
-3. Implement `handlePhotoMessage` with confirmation flow
-4. Implement `handleListCommand` with inline keyboard construction
-5. Implement `handleConsumeAction` and `handleDeleteAction`
-6. Implement `handleUnknownMessage`
-7. Write tests for all handlers and routing
+- All dependencies (adapter, vision, repository, i18n) are mocked via a shared harness
+- Integration tests in `tests/bot/engine.test.ts` verify the full routing chain using `createDefaultHandlers()`
+- Tests call `engine.start()`, then invoke the captured message/callback handlers directly
+- Coverage includes: all commands, photo processing (high/low confidence), confirmation flow (yes/no/timeout), all callback actions, unknown messages, error paths

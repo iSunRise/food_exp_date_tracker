@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 
 import { TelegramAdapter } from "./adapters/telegram.js";
 import { BotEngine } from "./bot/engine.js";
+import { createDefaultHandlers } from "./bot/handlers/index.js";
 import { config } from "./config.js";
 import { DefaultI18nService } from "./i18n/index.js";
 import { OpenRouterLlmClient } from "./llm/client.js";
@@ -39,7 +40,7 @@ async function bootstrap(): Promise<void> {
   adapter = new TelegramAdapter({ token: config.telegramBotToken });
 
   // Bot engine
-  const engine = new BotEngine({ adapter, vision, repository, i18n });
+  const engine = new BotEngine({ adapter, vision, repository, i18n, handlers: createDefaultHandlers() });
   engine.start();
   console.log("Bot engine started.");
 

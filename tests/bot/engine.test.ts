@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import { BotEngine } from "../../src/bot/engine.js";
+import { createDefaultHandlers } from "../../src/bot/handlers/index.js";
 import type {
   BotAdapter,
   FoodRepository,
@@ -92,6 +93,7 @@ function createHarness(): Harness {
     vision,
     repository,
     i18n,
+    handlers: createDefaultHandlers(),
   });
 
   engine.start();
